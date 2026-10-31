@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Itapass - Terminal do Caixa</title>
+    <!-- Tailwind CSS para um visual profissional e limpo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SDK do Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<html class="h-full bg-slate-100">
+<body class="h-full flex flex-col justify-between">
+
+    <!-- Cabeçalho -->
+    <header class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-4xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold">Itapass — Terminal de Caixa</h1>
+                <p id="info-operador" class="text-xs text-slate-400 mt-0.5">Carregando sessão...</p>
+            </div>
+            <button onclick="fazerLogout()" class="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition">
+                Sair do Turno
+            </button>
+        </div>
+    </header>
+
+    <!-- Conteúdo Principal -->
+    <main class="max-w-xl w-full mx-auto p-4 flex-grow flex flex-col justify-center">
+        
+        <!-- Tela de Login do Caixa (Caso não esteja logado) -->
+        <div id="card-login" class="bg-white rounded-2xl shadow-xl p-8 border border-slate-200">
+            <h2 class="text-2xl font-bold text-slate-800 mb-2 text-center">Acesso do Caixa</h2>
+            <p class="text-sm text-slate-500 mb-6 text-center">Insira seu e-mail de acesso autorizado pela loja.</p>
+            
+            <form onsubmit="fazerLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">E-mail / Código de Login</label>
+                    <input type="email" id="email-login" required placeholder="caixa@empresa.com" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-800">
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-500/20">
+                    Entrar no Terminal
+                </button>
+            </form>
+        </div>
+
+        <!-- Tela de Bipagem e Validação (Visível apenas após logar) -->
+        <div id="card-terminal" class="hidden bg-white rounded-2xl shadow-xl p-8 border border-slate-200 text-center">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full mb-4 shadow-inner">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+            </div>
+            
+            <h2 class="text-xl font-bold text-slate-800 mb-1">Aguardando Leitura (Bip USB)</h2>
+            <p class="text-xs text-slate-500 mb-6">Passe o leitor de código de barras no celular do cliente ou digite abaixo.</p>
+
+            <!-- Input ultra responsivo focado automaticamente para o Bip -->
+            <form onsubmit="validarCupomBipado(event)">
+                <input type="text" id="input-bip" autocomplete="off" autofocus placeholder="ITA-USER-..." class="w-full text-center text-2xl font-black uppercase tracking-widest bg-emerald-50 border-2 border-emerald-300 text-emerald-800 py-4 rounded-2xl focus:outline-none focus:border-emerald-600 mb-4 placeholder-emerald-300">
+                <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition">
+                    Validar Manualmente
+                </button>
+            </form>
+
+            <!-- Status da última validação -->
+            <div id="feedback-box" class="mt-6 p-4 rounded-xl hidden text-left border"></div>
+        </div>
+
+    </main>
+
+    <!-- Rodapé -->
+    <footer class="text-center py-4 text-xs text-slate-400">
+        Itapass Terminal Web &copy; 2026 — Todos os direitos reservados.
+    </footer>
+
+    <!-- Script de Integração com o Supabase e Lógica de Bip -->
+    <script>
+        // Suas credenciais oficiais do Supabase (as mesmas do app)
+        const SUPABASE_URL = 'https://orlpeyddxryfcamrkvkz.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_mkmjXAdz1HSbh7KRq5qRbA_ia5PLI25';
+        
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Estado local do Caixa
+        let caixaAtual = JSON.parse(localStorage.getItem('itapass_web_caixa')) || null;
+
+        window.onload = () => {
+            verificarEstadoSessao();
+        };
+
+        function verificarEstadoSessao() {
+            if (caixaAtual) {
+                document.getElementById('card-login').classList.add('hidden');
+                document.getElementById('card-terminal').classList.remove('hidden');
+                document.getElementById('info-operador').innerText = `Loja: ${caixaAtual.loja_nome || 'Parceira'} | Operador: ${caixaAtual.email}`;
+                
+                // Mantém o foco travado na caixinha do bip
+                setInterval(() => {
+                    const input = document.getElementById('input-bip');
+                    if (input && document.activeElement !== input) {
+                        input.focus();
+                    }
+                }, 1000);
+            } else {
+                document.getElementById('card-login').classList.remove('hidden');
+                document.getElementById('card-terminal').classList.add('hidden');
+            }
+        }
+
+        async function fazerLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('email-login').value.trim();
+
+            // Busca o caixa na tabela caixas_autorizados do Supabase
+            const { data, error } = await supabaseClient
+                .from('caixas_autorizados')
+                .select('*')
+                .eq('login_codigo', email)
+                .single();
+
+            if (error || !data) {
+                alert('E-mail de caixa não encontrado ou acesso não autorizado pelo lojista.');
+                return;
+            }
+
+            caixaAtual = { email: data.login_codigo, loja_id: data.loja_id };
+            localStorage.setItem('itapass_web_caixa', JSON.stringify(caixaAtual));
+            verificarEstadoSessao();
+        }
+
+        async function fazerLogout() {
+            localStorage.removeItem('itapass_web_caixa');
+            caixaAtual = null;
+            verificarEstadoSessao();
+        }
+
+        // FUNÇÃO PRINCIPAL DE BIPAGEM E VALIDAÇÃO AUTOMÁTICA
+        async function validarCupomBipado(e) {
+            if (e) e.preventDefault();
+            const inputField = document.getElementById('input-bip');
+            const codigoLido = inputField.value.trim().toUpperCase();
+            
+            if (!codigoLido) return;
+
+            const feedback = document.getElementById('feedback-box');
+            feedback.classList.remove('hidden');
+
+            try {
+                // 1. O código fixo lido (ex: ITA-USER-A1B2C3D4) contém os primeiros 8 dígitos do ID do usuário do Auth.
+                // Vamos extrair esses 8 dígitos para encontrar o usuario_id correspondente na tabela perfis ou histórico.
+                // Como o formato gerado é "ITA-USER-" + primeiros 8 caracteres do UUID:
+                const prefixoIdBusca = codigoLido.replace('ITA-USER-', '').toLowerCase();
+
+                // Procura na tabela de perfis o usuário cujo ID comece com esses caracteres
+                const { data: usuariosEncontrados, error: erroUsuario } = await supabaseClient
+                    .from('perfis')
+                    .select('id, nome')
+                    .ilike('id', `${prefixoIdBusca}%`);
+
+                if (erroUsuario || !usuariosEncontrados || usuariosEncontrados.length === 0) {
+                    mostrarFeedback('❌ Cliente não encontrado na base de dados.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                    inputField.value = '';
+                    return;
+                }
+
+                const usuario = usuariosEncontrados[0];
+
+                // 2. Verifica a regra de limite semanal do usuário (máximo 2 por semana)
+                const semanaAtual = obterSemanaAtual();
+                const { data: historicoSemana } = await supabaseClient
+                    .from('historico_cupons')
+                    .select('id')
+                    .eq('usuario_id', usuario.id)
+                    .eq('semana', semanaAtual);
+
+                if (historicoSemana && historicoSemana.length >= 2) {
+                    mostrarFeedback(`⚠️ Limite Atingido: O cliente ${usuario.nome} já usou os 2 descontos permitidos desta semana!`, 'bg-amber-50', 'border-amber-200', 'text-amber-800');
+                    inputField.value = '';
+                    return;
+                }
+
+                // 3. Registra o uso do desconto instantaneamente na tabela historico_cupons
+                const dataHoraAtual = new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                const { error: erroInsercao } = await supabaseClient
+                    .from('historico_cupons')
+                    .insert([{
+                        usuario_id: usuario.id,
+                        loja_id: caixaAtual.loja_id,
+                        codigo_unico: codigoLido,
+                        semana: semanaAtual,
+                        concedido_por: caixaAtual.email,
+                        data_uso: dataHoraAtual
+                    }]);
+
+                if (erroInsercao) throw erroInsercao;
+
+                // Sucesso absoluto!
+                mostrarFeedback(`✅ SUCESSO! Desconto aplicado para <strong>${usuario.nome}</strong>. Registrado na nuvem!`, 'bg-emerald-50', 'border-emerald-200', 'text-emerald-800');
+                inputField.value = '';
+
+            } catch (err) {
+                console.error(err);
+                mostrarFeedback('❌ Erro de conexão ao validar o cupom na nuvem.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                inputField.value = '';
+            }
+        }
+
+        function mostrarFeedback(mensagem, bgClass, borderClass, textClass) {
+            const feedback = document.getElementById('feedback-box');
+            feedback.className = `mt-6 p-4 rounded-xl text-left border ${bgClass} ${borderClass} ${textClass}`;
+            feedback.innerHTML = mensagem;
+        }
+
+        function obterSemanaAtual() {
+            const agora = new Date();
+            const inicioAno = new Date(agora.getFullYear(), 0, 1);
+            const dias = Math.floor((agora.getTime() - inicioAno.getTime()) / (24 * 60 * 60 * 1000));
+            return `${agora.getFullYear()}-W${Math.ceil((dias + 1) / 7)}`;
+        }
+    </script>
+</body>
+</html>
