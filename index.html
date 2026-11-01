@@ -31,12 +31,16 @@
         <!-- Tela de Login do Caixa (Caso não esteja logado) -->
         <div id="card-login" class="bg-white rounded-2xl shadow-xl p-8 border border-slate-200">
             <h2 class="text-2xl font-bold text-slate-800 mb-2 text-center">Acesso do Caixa</h2>
-            <p class="text-sm text-slate-500 mb-6 text-center">Insira seu e-mail de acesso autorizado pela loja.</p>
+            <p class="text-sm text-slate-500 mb-6 text-center">Insira seu e-mail e senha autorizados.</p>
             
             <form onsubmit="fazerLogin(event)" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 uppercase mb-1">E-mail / Código de Login</label>
                     <input type="email" id="email-login" required placeholder="caixa@empresa.com" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-800">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Senha</label>
+                    <input type="password" id="senha-login" required placeholder="••••••••" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-800">
                 </div>
                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-500/20">
                     Entrar no Terminal
@@ -74,13 +78,11 @@
 
     <!-- Script de Integração com o Supabase e Lógica de Bip -->
     <script>
-        // Suas credenciais oficiais do Supabase (as mesmas do app)
         const SUPABASE_URL = 'https://orlpeyddxryfcamrkvkz.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_mkmjXAdz1HSbh7KRq5qRbA_ia5PLI25';
         
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // Estado local do Caixa
         let caixaAtual = JSON.parse(localStorage.getItem('itapass_web_caixa')) || null;
 
         window.onload = () => {
@@ -91,7 +93,7 @@
             if (caixaAtual) {
                 document.getElementById('card-login').classList.add('hidden');
                 document.getElementById('card-terminal').classList.remove('hidden');
-                document.getElementById('info-operador').innerText = `Loja: ${caixaAtual.loja_nome || 'Parceira'} | Operador: ${caixaAtual.email}`;
+                document.getElementById('info-operador').innerText = `Loja ID: ${caixaAtual.loja_id || 'Parceira'} | Operador: ${caixaAtual.email}`;
                 
                 // Mantém o foco travado na caixinha do bip
                 setInterval(() => {
@@ -109,16 +111,17 @@
         async function fazerLogin(e) {
             e.preventDefault();
             const email = document.getElementById('email-login').value.trim();
+            const senha = document.getElementById('senha-login').value.trim();
 
-            // Busca o caixa na tabela caixas_autorizados do Supabase
             const { data, error } = await supabaseClient
                 .from('caixas_autorizados')
                 .select('*')
                 .eq('login_codigo', email)
+                .eq('senha_pin', senha)
                 .single();
 
             if (error || !data) {
-                alert('E-mail de caixa não encontrado ou acesso não autorizado pelo lojista.');
+                alert('E-mail ou senha incorretos, ou acesso não autorizado.');
                 return;
             }
 
@@ -145,18 +148,24 @@
             feedback.classList.remove('hidden');
 
             try {
-                // 1. O código fixo lido (ex: ITA-USER-A1B2C3D4) contém os primeiros 8 dígitos do ID do usuário do Auth.
-                // Vamos extrair esses 8 dígitos para encontrar o usuario_id correspondente na tabela perfis ou histórico.
-                // Como o formato gerado é "ITA-USER-" + primeiros 8 caracteres do UUID:
                 const prefixoIdBusca = codigoLido.replace('ITA-USER-', '').toLowerCase();
 
-                // Procura na tabela de perfis o usuário cujo ID comece com esses caracteres
-                const { data: usuariosEncontrados, error: erroUsuario } = await supabaseClient
+                // Busca todos os perfis para filtrar localmente (evitando erro de ilike em colunas UUID)
+                const { data: todosPerfis, error: erroUsuario } = await supabaseClient
                     .from('perfis')
-                    .select('id, nome')
-                    .ilike('id', `${prefixoIdBusca}%`);
+                    .select('id, nome');
 
-                if (erroUsuario || !usuariosEncontrados || usuariosEncontrados.length === 0) {
+                if (erroUsuario || !todosPerfis || todosPerfis.length === 0) {
+                    mostrarFeedback('❌ Erro ao acessar a base de dados de clientes.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                    inputField.value = '';
+                    return;
+                }
+
+                const usuariosEncontrados = todosPerfis.filter(perfil => 
+                    perfil.id.toLowerCase().startsWith(prefixoIdBusca)
+                );
+
+                if (usuariosEncontrados.length === 0) {
                     mostrarFeedback('❌ Cliente não encontrado na base de dados.', 'bg-red-50', 'border-red-200', 'text-red-700');
                     inputField.value = '';
                     return;
@@ -164,7 +173,7 @@
 
                 const usuario = usuariosEncontrados[0];
 
-                // 2. Verifica a regra de limite semanal do usuário (máximo 2 por semana)
+                // Verifica a regra de limite semanal do usuário (máximo 2 por semana)
                 const semanaAtual = obterSemanaAtual();
                 const { data: historicoSemana } = await supabaseClient
                     .from('historico_cupons')
@@ -178,7 +187,7 @@
                     return;
                 }
 
-                // 3. Registra o uso do desconto instantaneamente na tabela historico_cupons
+                // Registra o uso do desconto instantaneamente usando as colunas reais da tabela
                 const dataHoraAtual = new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
                 const { error: erroInsercao } = await supabaseClient
@@ -189,7 +198,8 @@
                         codigo_unico: codigoLido,
                         semana: semanaAtual,
                         concedido_por: caixaAtual.email,
-                        data_uso: dataHoraAtual
+                        data_uso: dataHoraAtual,
+                        valor_final: "0"
                     }]);
 
                 if (erroInsercao) throw erroInsercao;
@@ -200,7 +210,7 @@
 
             } catch (err) {
                 console.error(err);
-                mostrarFeedback('❌ Erro de conexão ao validar o cupom na nuvem.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                mostrarFeedback('❌ Erro de conexão ao registrar o desconto na nuvem.', 'bg-red-50', 'border-red-200', 'text-red-700');
                 inputField.value = '';
             }
         }
