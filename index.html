@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Itapass - Terminal do Caixa</title>
+    <title>Itapass — Terminal do Caixa</title>
     <!-- Tailwind CSS para um visual profissional e limpo -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- SDK do Supabase -->
@@ -59,7 +59,7 @@
 
             <!-- Input ultra responsivo focado automaticamente para o Bip -->
             <form onsubmit="validarCupomBipado(event)">
-                <input type="text" id="input-bip" autocomplete="off" autofocus placeholder="ITA-USER-..." class="w-full text-center text-2xl font-black uppercase tracking-widest bg-emerald-50 border-2 border-emerald-300 text-emerald-800 py-4 rounded-2xl focus:outline-none focus:border-emerald-600 mb-4 placeholder-emerald-300">
+                <input type="text" id="input-bip" autocomplete="off" autofocus placeholder="ITA-XXXXXXXX-..." class="w-full text-center text-xl font-black uppercase tracking-widest bg-emerald-50 border-2 border-emerald-300 text-emerald-800 py-4 rounded-2xl focus:outline-none focus:border-emerald-600 mb-4 placeholder-emerald-300">
                 <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition">
                     Validar Manualmente
                 </button>
@@ -136,7 +136,7 @@
             verificarEstadoSessao();
         }
 
-        // FUNÇÃO PRINCIPAL DE BIPAGEM E VALIDAÇÃO AUTOMÁTICA
+        // FUNÇÃO PRINCIPAL DE BIPAGEM E VALIDAÇÃO AUTOMÁTICA (SUPORTA TOKENS ROTATIVOS DE 30S)
         async function validarCupomBipado(e) {
             if (e) e.preventDefault();
             const inputField = document.getElementById('input-bip');
@@ -148,9 +148,20 @@
             feedback.classList.remove('hidden');
 
             try {
-                const prefixoIdBusca = codigoLido.replace('ITA-USER-', '').toLowerCase();
+                // TRATAMENTO INTELIGENTE DO CÓDIGO ROTATIVO
+                // Formatos aceitos: ITA-USER-xxxx ou ITA-xxxx-timestamp
+                let prefixoIdBusca = '';
+                const partes = codigoLido.split('-');
 
-                // Busca todos os perfis para filtrar localmente (evitando erro de ilike em colunas UUID)
+                if (partes.length >= 3) {
+                    prefixoIdBusca = partes[2].toLowerCase(); // Pega o identificador rotativo ou UUID curto
+                } else if (partes.length === 2) {
+                    prefixoIdBusca = partes[1].toLowerCase();
+                } else {
+                    prefixoIdBusca = codigoLido.toLowerCase();
+                }
+
+                // Busca todos os perfis para filtrar localmente pelo prefixo do ID
                 const { data: todosPerfis, error: erroUsuario } = await supabaseClient
                     .from('perfis')
                     .select('id, nome');
@@ -166,7 +177,7 @@
                 );
 
                 if (usuariosEncontrados.length === 0) {
-                    mostrarFeedback('❌ Cliente não encontrado na base de dados.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                    mostrarFeedback('❌ Cliente não encontrado ou código expirado/inválido.', 'bg-red-50', 'border-red-200', 'text-red-700');
                     inputField.value = '';
                     return;
                 }
@@ -187,7 +198,7 @@
                     return;
                 }
 
-                // Registra o uso do desconto instantaneamente usando as colunas reais da tabela
+                // Registra o uso do desconto instantaneamente
                 const dataHoraAtual = new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
                 const { error: erroInsercao } = await supabaseClient
