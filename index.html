@@ -57,7 +57,6 @@
             <h2 class="text-xl font-bold text-slate-800 mb-1">Aguardando Leitura</h2>
             <p class="text-xs text-slate-500 mb-6">Passe o leitor de código de barras no celular do cliente ou digite abaixo.</p>
 
-            <!-- Input ultra responsivo focado automaticamente para o Bip -->
             <form onsubmit="validarCupomBipado(event)">
                 <input type="text" id="input-bip" autocomplete="off" autofocus placeholder="ITA-XXXXXXXX-XXXXXXXX" class="w-full text-center text-xl font-black uppercase tracking-widest bg-emerald-50 border-2 border-emerald-300 text-emerald-800 py-4 rounded-2xl focus:outline-none focus:border-emerald-600 mb-4 placeholder-emerald-300">
                 <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition">
@@ -65,18 +64,15 @@
                 </button>
             </form>
 
-            <!-- Status da última validação -->
             <div id="feedback-box" class="mt-6 p-4 rounded-xl hidden text-left border"></div>
         </div>
 
     </main>
 
-    <!-- Rodapé -->
     <footer class="text-center py-4 text-xs text-slate-400">
         Itapass Terminal Web &copy; 2026 — Todos os direitos reservados.
     </footer>
 
-    <!-- Script de Integração com o Supabase e Lógica de Bip -->
     <script>
         const SUPABASE_URL = 'https://orlpeyddxryfcamrkvkz.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_mkmjXAdz1HSbh7KRq5qRbA_ia5PLI25';
@@ -95,7 +91,6 @@
                 document.getElementById('card-terminal').classList.remove('hidden');
                 document.getElementById('info-operador').innerText = `Loja ID: ${caixaAtual.loja_id || 'Parceira'} | Operador: ${caixaAtual.email}`;
                 
-                // Mantém o foco travado na caixinha do bip
                 setInterval(() => {
                     const input = document.getElementById('input-bip');
                     if (input && document.activeElement !== input) {
@@ -136,7 +131,7 @@
             verificarEstadoSessao();
         }
 
-        // LEITOR CORRIGIDO PARA O FORMATO ITA-IDCURTO-TIMESTAMP
+        // VALIDAÇÃO BLINDADA: VERIFICA O ID E O TIMESTAMP DE 30s
         async function validarCupomBipado(e) {
             if (e) e.preventDefault();
             const inputField = document.getElementById('input-bip');
@@ -148,17 +143,28 @@
             feedback.classList.remove('hidden');
 
             try {
-                // Exemplo: ITA-17082408-59788682 -> O ID curto do usuário está na segunda parte (partes[1])
-                let prefixoIdBusca = '';
                 const partes = codigoLido.split('-');
 
-                if (partes.length >= 2) {
-                    prefixoIdBusca = partes[1].toLowerCase(); // Pega '17082408'
-                } else {
-                    prefixoIdBusca = codigoLido.replace('ITA-', '').toLowerCase();
+                if (partes.length < 3 || partes[0] !== 'ITA') {
+                    mostrarFeedback('❌ Código inválido ou fora do padrão de segurança do Itapass.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                    inputField.value = '';
+                    return;
                 }
 
-                // Busca todos os perfis para filtrar localmente pelo prefixo do ID
+                const prefixoIdBusca = partes[1].toLowerCase(); // Ex: 17082408
+                const timestampLido = parseInt(partes[2], 10); // Ex: 59788682 (bloco de tempo)
+
+                // Bloco de tempo atual do servidor (calculado no exato segundo da leitura)
+                const blocoTempoAtual = Math.floor(Date.now() / 30000);
+
+                // TRAVA ANTI-PRINT ABSOLUTA: O token lido deve ser do bloco atual ou do bloco imediatamente anterior (tolerância de 30s)
+                if (isNaN(timestampLido) || (timestampLido !== blocoTempoAtual && timestampLido !== blocoTempoAtual - 1)) {
+                    mostrarFeedback('❌ Código expirado! Este print é antigo (mais de 30s). Peça para o cliente atualizar o app.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                    inputField.value = '';
+                    return;
+                }
+
+                // Busca o cliente na tabela de perfis
                 const { data: todosPerfis, error: erroUsuario } = await supabaseClient
                     .from('perfis')
                     .select('id, nome');
@@ -174,14 +180,14 @@
                 );
 
                 if (usuariosEncontrados.length === 0) {
-                    mostrarFeedback('❌ Cliente não encontrado ou código inválido.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                    mostrarFeedback('❌ Cliente não encontrado na base de dados.', 'bg-red-50', 'border-red-200', 'text-red-700');
                     inputField.value = '';
                     return;
                 }
 
                 const usuario = usuariosEncontrados[0];
 
-                // Verifica a regra de limite semanal do usuário (máximo 2 por semana)
+                // Verifica a regra de limite semanal (máximo 2 por semana)
                 const semanaAtual = obterSemanaAtual();
                 const { data: historicoSemana } = await supabaseClient
                     .from('historico_cupons')
@@ -195,7 +201,7 @@
                     return;
                 }
 
-                // Registra o uso do desconto instantaneamente
+                // Registra o uso do desconto na nuvem
                 const dataHoraAtual = new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
                 const { error: erroInsercao } = await supabaseClient
@@ -212,7 +218,6 @@
 
                 if (erroInsercao) throw erroInsercao;
 
-                // Sucesso absoluto!
                 mostrarFeedback(`✅ SUCESSO! Desconto aplicado para <strong>${usuario.nome}</strong>.`, 'bg-emerald-50', 'border-emerald-200', 'text-emerald-800');
                 inputField.value = '';
 
