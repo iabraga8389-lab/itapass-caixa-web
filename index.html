@@ -59,7 +59,7 @@
 
             <!-- Input ultra responsivo focado automaticamente para o Bip -->
             <form onsubmit="validarCupomBipado(event)">
-                <input type="text" id="input-bip" autocomplete="off" autofocus placeholder="ITA-XXXXXXXX-..." class="w-full text-center text-xl font-black uppercase tracking-widest bg-emerald-50 border-2 border-emerald-300 text-emerald-800 py-4 rounded-2xl focus:outline-none focus:border-emerald-600 mb-4 placeholder-emerald-300">
+                <input type="text" id="input-bip" autocomplete="off" autofocus placeholder="ITA-XXXXXXXX-XXXXXXXX" class="w-full text-center text-xl font-black uppercase tracking-widest bg-emerald-50 border-2 border-emerald-300 text-emerald-800 py-4 rounded-2xl focus:outline-none focus:border-emerald-600 mb-4 placeholder-emerald-300">
                 <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition">
                     Validar Manualmente
                 </button>
@@ -136,7 +136,7 @@
             verificarEstadoSessao();
         }
 
-        // FUNÇÃO PRINCIPAL DE BIPAGEM E VALIDAÇÃO AUTOMÁTICA (SUPORTA TOKENS ROTATIVOS DE 30S)
+        // LEITOR CORRIGIDO PARA O FORMATO ITA-IDCURTO-TIMESTAMP
         async function validarCupomBipado(e) {
             if (e) e.preventDefault();
             const inputField = document.getElementById('input-bip');
@@ -148,17 +148,14 @@
             feedback.classList.remove('hidden');
 
             try {
-                // TRATAMENTO INTELIGENTE DO CÓDIGO ROTATIVO
-                // Formatos aceitos: ITA-USER-xxxx ou ITA-xxxx-timestamp
+                // Exemplo: ITA-17082408-59788682 -> O ID curto do usuário está na segunda parte (partes[1])
                 let prefixoIdBusca = '';
                 const partes = codigoLido.split('-');
 
-                if (partes.length >= 3) {
-                    prefixoIdBusca = partes[2].toLowerCase(); // Pega o identificador rotativo ou UUID curto
-                } else if (partes.length === 2) {
-                    prefixoIdBusca = partes[1].toLowerCase();
+                if (partes.length >= 2) {
+                    prefixoIdBusca = partes[1].toLowerCase(); // Pega '17082408'
                 } else {
-                    prefixoIdBusca = codigoLido.toLowerCase();
+                    prefixoIdBusca = codigoLido.replace('ITA-', '').toLowerCase();
                 }
 
                 // Busca todos os perfis para filtrar localmente pelo prefixo do ID
@@ -177,7 +174,7 @@
                 );
 
                 if (usuariosEncontrados.length === 0) {
-                    mostrarFeedback('❌ Cliente não encontrado ou código expirado/inválido.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                    mostrarFeedback('❌ Cliente não encontrado ou código inválido.', 'bg-red-50', 'border-red-200', 'text-red-700');
                     inputField.value = '';
                     return;
                 }
