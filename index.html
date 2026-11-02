@@ -58,7 +58,7 @@
             <p class="text-xs text-slate-500 mb-6">Passe o leitor de código de barras no celular do cliente ou digite abaixo.</p>
 
             <form onsubmit="validarCupomBipado(event)">
-                <input type="text" id="input-bip" autocomplete="off" autofocus placeholder="ITA-XXXXXXXX-XXXXXXXX" class="w-full text-center text-xl font-black uppercase tracking-widest bg-emerald-50 border-2 border-emerald-300 text-emerald-800 py-4 rounded-2xl focus:outline-none focus:border-emerald-600 mb-4 placeholder-emerald-300">
+                <input type="text" id="input-bip" autocomplete="off" autofocus placeholder="ITA-XXXXXXXX-TIMESTAMP" class="w-full text-center text-xl font-black uppercase tracking-widest bg-emerald-50 border-2 border-emerald-300 text-emerald-800 py-4 rounded-2xl focus:outline-none focus:border-emerald-600 mb-4 placeholder-emerald-300">
                 <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition">
                     Validar Manualmente
                 </button>
@@ -131,7 +131,7 @@
             verificarEstadoSessao();
         }
 
-        // VALIDAÇÃO BLINDADA: VERIFICA O ID E O TIMESTAMP DE 30s
+        // VALIDAÇÃO EXATA SINCRONIZADA COM O RELÓGIO DE 30S
         async function validarCupomBipado(e) {
             if (e) e.preventDefault();
             const inputField = document.getElementById('input-bip');
@@ -151,20 +151,20 @@
                     return;
                 }
 
-                const prefixoIdBusca = partes[1].toLowerCase(); // Ex: 17082408
-                const timestampLido = parseInt(partes[2], 10); // Ex: 59788682 (bloco de tempo)
+                const prefixoIdBusca = partes[1].toLowerCase(); 
+                const timestampLido = parseInt(partes[2], 10); 
 
-                // Bloco de tempo atual do servidor (calculado no exato segundo da leitura)
+                // Bloco de tempo atual exato da leitura no servidor
                 const blocoTempoAtual = Math.floor(Date.now() / 30000);
 
-                // TRAVA ANTI-PRINT ABSOLUTA: O token lido deve ser do bloco atual ou do bloco imediatamente anterior (tolerância de 30s)
-                if (isNaN(timestampLido) || (timestampLido !== blocoTempoAtual && timestampLido !== blocoTempoAtual - 1)) {
-                    mostrarFeedback('❌ Código expirado! Este print é antigo (mais de 30s). Peça para o cliente atualizar o app.', 'bg-red-50', 'border-red-200', 'text-red-700');
+                // VALIDAÇÃO RÍGIDA: Apenas o bloco atual exato é aceito (sem resquício de prints antigos)
+                if (isNaN(timestampLido) || timestampLido !== blocoTempoAtual) {
+                    mostrarFeedback('❌ Código expirado! O token rotativo mudou. Peça para o cliente atualizar a tela.', 'bg-red-50', 'border-red-200', 'text-red-700');
                     inputField.value = '';
                     return;
                 }
 
-                // Busca o cliente na tabela de perfis
+                // Busca o cliente na base de dados
                 const { data: todosPerfis, error: erroUsuario } = await supabaseClient
                     .from('perfis')
                     .select('id, nome');
